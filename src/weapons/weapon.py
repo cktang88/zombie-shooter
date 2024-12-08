@@ -29,7 +29,7 @@ class Bullet(pygame.sprite.Sprite):
         self.max_trail_length = 5
 
         # Increase bullet speed significantly
-        self.speed = 20
+        self.speed = 35
         self.angle = angle
         self.dx = math.cos(angle) * self.speed
         self.dy = math.sin(angle) * self.speed
@@ -41,6 +41,14 @@ class Bullet(pygame.sprite.Sprite):
         self.image = pygame.transform.rotate(self.base_image, -math.degrees(angle))
         self.rect = self.image.get_rect(center=(self.x, self.y))
 
+        # Add a smaller collision rect for more precise collision detection
+        self.collision_rect = pygame.Rect(0, 0, 8, 8)  # Smaller collision box
+        self.update_collision_rect()
+
+    def update_collision_rect(self):
+        """Update the smaller collision rectangle position."""
+        self.collision_rect.center = self.rect.center
+
     def update(self):
         # Update position using float coordinates for smooth movement
         self.x += self.dx
@@ -49,6 +57,7 @@ class Bullet(pygame.sprite.Sprite):
         # Update sprite rect position
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
+        self.update_collision_rect()
 
         # Update trail
         self.prev_positions.append((self.x, self.y))
@@ -221,25 +230,19 @@ class Weapon:
             self.current_ammo -= 1
             print(f"Ammo decreased to {self.current_ammo}")  # Debug
 
-        # Calculate bullet direction from angle
-        dx = math.cos(angle) * self.bullet_speed
-        dy = math.sin(angle) * self.bullet_speed
-
         if self.type == WeaponType.SHOTGUN:
             # Create spread bullets for shotgun
             bullets = []
             spread_angles = [-0.2, -0.1, 0, 0.1, 0.2]  # Spread pattern
             for spread in spread_angles:
                 spread_angle = angle + spread
-                spread_dx = math.cos(spread_angle) * self.bullet_speed
-                spread_dy = math.sin(spread_angle) * self.bullet_speed
-                bullet = Bullet(x, y, spread_dx, spread_dy, self.damage, self.range)
+                bullet = Bullet(x, y, spread_angle, self.damage)
                 bullets.append(bullet)
             print(f"Created {len(bullets)} shotgun bullets")  # Debug
             return bullets
         else:
             # Single bullet for other weapons
-            bullet = Bullet(x, y, dx, dy, self.damage, self.range)
+            bullet = Bullet(x, y, angle, self.damage)
             print("Created single bullet")  # Debug
             return [bullet]
 

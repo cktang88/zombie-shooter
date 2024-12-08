@@ -133,9 +133,17 @@ class Game:
             # Update player with world coordinates
             self.player.update(self.mouse_world_x, self.mouse_world_y)
 
-            # Update all sprites
+            # Update all sprites and check collisions
             for bullet in list(self.bullets):
                 bullet.update()
+
+                # Check for zombie collisions using the smaller collision rect
+                for zombie in list(self.zombies):
+                    if bullet.collision_rect.colliderect(zombie.rect):
+                        zombie.take_damage(bullet.damage)
+                        bullet.kill()
+                        break
+
                 # Remove bullets that are off screen
                 if (
                     bullet.rect.right < self.camera_x
@@ -238,17 +246,13 @@ class Game:
 
         return True
 
-    def draw(self):
-        # Clear screen
-        self.screen.fill((100, 150, 100))  # Light green background
-
+    def draw_game_objects(self):
+        """Draw all game objects in the correct order."""
         # Draw world border
         border_rect = pygame.Rect(
             -self.camera_x, -self.camera_y, self.world_width, self.world_height
         )
         pygame.draw.rect(self.screen, (50, 100, 50), border_rect, 3)
-
-        # Draw game objects in order (background to foreground)
 
         # Draw castle first (it's the most background element)
         self.castle.draw(
@@ -307,51 +311,49 @@ class Game:
                     1,  # Draw only outline
                 )
 
-        # Draw UI elements
-        if self.state == GameState.SHOPPING:
-            self.shop_manager.draw(self.screen)
-        else:
-            # Draw UI background panel
-            ui_panel = pygame.Surface((200, 150))
-            ui_panel.fill((40, 40, 40))  # Dark gray
-            ui_panel.set_alpha(200)  # Semi-transparent
-            self.screen.blit(ui_panel, (5, 5))
+    def draw_ui(self):
+        """Draw all UI elements."""
+        # Draw UI background panel
+        ui_panel = pygame.Surface((200, 150))
+        ui_panel.fill((40, 40, 40))  # Dark gray
+        ui_panel.set_alpha(200)  # Semi-transparent
+        self.screen.blit(ui_panel, (5, 5))
 
-            # Draw UI text with improved contrast
-            font = pygame.font.Font(None, 36)
+        # Draw UI text with improved contrast
+        font = pygame.font.Font(None, 36)
 
-            # Draw cash with background
-            cash_text = font.render(f"Cash: ${self.cash}", True, (34, 255, 34))
-            self.screen.blit(cash_text, (15, 15))
+        # Draw cash with background
+        cash_text = font.render(f"Cash: ${self.cash}", True, (34, 255, 34))
+        self.screen.blit(cash_text, (15, 15))
 
-            # Draw wave information
-            wave_text = font.render(
-                f"Wave: {self.wave_manager.current_wave}", True, (255, 255, 255)
-            )
-            self.screen.blit(wave_text, (15, 55))
+        # Draw wave information
+        wave_text = font.render(
+            f"Wave: {self.wave_manager.current_wave}", True, (255, 255, 255)
+        )
+        self.screen.blit(wave_text, (15, 55))
 
-            # Draw remaining zombies
-            zombies_text = font.render(
-                f"Zombies: {len(self.zombies)}", True, (255, 255, 255)
-            )
-            self.screen.blit(zombies_text, (15, 95))
+        # Draw remaining zombies
+        zombies_text = font.render(
+            f"Zombies: {len(self.zombies)}", True, (255, 255, 255)
+        )
+        self.screen.blit(zombies_text, (15, 95))
 
-            # Draw ammo counter
-            if self.player.current_weapon:
-                if self.player.current_weapon.is_melee:
-                    ammo_text = font.render("Melee Weapon", True, (255, 255, 255))
-                else:
-                    ammo_text = font.render(
-                        f"Ammo: {self.player.current_weapon.current_ammo}/{self.player.current_weapon.ammo_capacity}",
-                        True,
-                        (255, 255, 255),
-                    )
-                self.screen.blit(ammo_text, (15, 135))
+        # Draw ammo counter
+        if self.player.current_weapon:
+            if self.player.current_weapon.is_melee:
+                ammo_text = font.render("Melee Weapon", True, (255, 255, 255))
+            else:
+                ammo_text = font.render(
+                    f"Ammo: {self.player.current_weapon.current_ammo}/{self.player.current_weapon.ammo_capacity}",
+                    True,
+                    (255, 255, 255),
+                )
+            self.screen.blit(ammo_text, (15, 135))
 
-            # Always draw the inventory toolbar
-            self.shop_manager.draw_toolbar(self.screen)
+        # Always draw the inventory toolbar
+        self.shop_manager.draw_toolbar(self.screen)
 
-        # Draw pause overlay
+        # Draw pause overlay if paused
         if self.is_paused:
             # Semi-transparent overlay
             overlay = pygame.Surface((self.screen_width, self.screen_height))
@@ -374,6 +376,111 @@ class Game:
                 center=(self.screen_width // 2, self.screen_height // 2 + 50)
             )
             self.screen.blit(instruction_text, instruction_rect)
+
+    def draw_zombie_radar(self):
+        """Draw radar indicators for off-screen zombies."""
+        # Constants for radar appearance
+        RADAR_MARGIN = 50  # Distance from screen edge
+        DOT_SIZE = 8
+        RADAR_COLOR = (255, 50, 50)  # Bright red
+
+        # Calculate viewport bounds
+        viewport_left = self.camera_x
+        viewport_right = self.camera_x + self.screen_width
+        viewport_top = self.camera_y
+        viewport_bottom = self.camera_y + self.screen_height
+
+        for zombie in self.zombies:
+            # Check if zombie is outside viewport
+            is_outside_viewport = (
+                zombie.rect.right < viewport_left
+                or zombie.rect.left > viewport_right
+                or zombie.rect.bottom < viewport_top
+                or zombie.rect.top > viewport_bottom
+            )
+
+            if is_outside_viewport:
+                # Get zombie's position relative to screen center
+                screen_center_x = self.screen_width / 2
+                screen_center_y = self.screen_height / 2
+
+                # Calculate direction to zombie from screen center
+                dx = zombie.rect.centerx - (self.camera_x + screen_center_x)
+                dy = zombie.rect.centery - (self.camera_y + screen_center_y)
+                angle = math.atan2(dy, dx)
+
+                # Calculate radar dot position along screen edge
+                radar_x = screen_center_x + math.cos(angle) * (
+                    self.screen_width / 2 - RADAR_MARGIN
+                )
+                radar_y = screen_center_y + math.sin(angle) * (
+                    self.screen_height / 2 - RADAR_MARGIN
+                )
+
+                # Clamp to screen edges
+                radar_x = max(
+                    RADAR_MARGIN, min(self.screen_width - RADAR_MARGIN, radar_x)
+                )
+                radar_y = max(
+                    RADAR_MARGIN, min(self.screen_height - RADAR_MARGIN, radar_y)
+                )
+
+                # Calculate distance for scaling
+                distance = math.sqrt(dx * dx + dy * dy)
+                max_distance = math.sqrt(
+                    self.world_width * self.world_width
+                    + self.world_height * self.world_height
+                )
+                scale = 1 - min(distance / max_distance, 0.8)  # Cap minimum size at 20%
+
+                # Draw radar dot with glow effect
+                base_size = DOT_SIZE * (
+                    0.5 + scale * 0.5
+                )  # Scale dot size based on distance
+
+                # Draw outer glow
+                for i in range(4, 0, -1):
+                    size = int(base_size) + i
+                    alpha = int(255 * (1 - i / 4))
+
+                    # Create a surface for this glow layer
+                    glow_surf = pygame.Surface((size * 2, size * 2))
+                    glow_surf.set_colorkey((0, 0, 0))
+
+                    # Draw the glow circle
+                    pygame.draw.circle(glow_surf, RADAR_COLOR, (size, size), size)
+
+                    # Set the alpha for this layer
+                    glow_surf.set_alpha(alpha)
+
+                    # Blit the glow layer
+                    self.screen.blit(
+                        glow_surf, (int(radar_x - size), int(radar_y - size))
+                    )
+
+                # Draw core dot (solid color)
+                pygame.draw.circle(
+                    self.screen,
+                    RADAR_COLOR,
+                    (int(radar_x), int(radar_y)),
+                    max(1, int(base_size) // 2),  # Ensure minimum size of 1
+                )
+
+    def draw(self):
+        # Clear screen
+        self.screen.fill((100, 150, 100))  # Light green background
+
+        # Draw game objects in order (background to foreground)
+        self.draw_game_objects()
+
+        # Draw UI elements
+        if self.state == GameState.SHOPPING:
+            self.shop_manager.draw(self.screen)
+        else:
+            self.draw_ui()
+
+        # Draw zombie radar
+        self.draw_zombie_radar()
 
         # Update display
         pygame.display.flip()

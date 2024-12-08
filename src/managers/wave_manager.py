@@ -75,7 +75,7 @@ class WaveManager:
             return
 
         if self.zombies_to_spawn <= 0:
-            # Check if wave is complete (no zombies left)
+            # Only set wave complete when no zombies are left to spawn AND no active zombies
             if len(game.zombies) == 0:
                 self.wave_complete_flag = True
             return
@@ -103,8 +103,6 @@ class WaveManager:
         print(f"Spawned {zombie_type} zombie at ({x}, {y})")  # Debug
 
         self.zombies_to_spawn -= 1
-        if self.zombies_to_spawn <= 0:
-            self.wave_complete_flag = True
 
     def determine_zombie_type(self):
         """
