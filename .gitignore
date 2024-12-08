@@ -1,0 +1,16 @@
+# standard python gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+
+
+# pygame cache
+*.pyg
+
+# pyinstaller cache
+dist/
+
+
+*.env
