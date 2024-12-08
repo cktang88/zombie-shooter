@@ -193,17 +193,35 @@ class Player(pygame.sprite.Sprite):
         return []
 
     def throw_grenade(self):
+        """Throw a grenade in the direction the player is facing."""
         current_time = pygame.time.get_ticks()
         if (
             self.grenades > 0
             and current_time - self.last_grenade_time > self.grenade_cooldown
+            and self.game
         ):
+            # Calculate throw direction based on mouse position
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            world_x, world_y = self.game.screen_to_world(mouse_x, mouse_y)
+
+            # Calculate direction vector
+            dx = world_x - self.rect.centerx
+            dy = world_y - self.rect.centery
+            length = math.sqrt(dx * dx + dy * dy)
+            if length > 0:
+                dx = dx / length
+                dy = dy / length
+
+            # Create and add grenade
+            grenade = Grenade(
+                self.rect.centerx, self.rect.centery, dx, dy  # Normalized direction
+            )
+            self.game.grenades.add(grenade)
+
+            # Update state
             self.grenades -= 1
             self.last_grenade_time = current_time
-            return [
-                Grenade(self.rect.centerx, self.rect.centery, math.radians(self.angle))
-            ]
-        return []
+            print(f"Threw grenade, {self.grenades} remaining")  # Debug
 
     def take_damage(self, amount):
         self.health = max(0, self.health - amount)

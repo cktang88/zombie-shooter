@@ -121,11 +121,20 @@ class ShopManager:
                     can_place = False
                     break
 
+            # Draw placement preview
+            screen_x = mouse_pos[0]
+            screen_y = mouse_pos[1]
+
+            # Draw preview with transparency
+            preview_surf = pygame.Surface((40, 40), pygame.SRCALPHA)
+            color = (0, 255, 0, 128) if can_place else (255, 0, 0, 128)
+            pygame.draw.rect(preview_surf, color, (0, 0, 40, 40))
+            self.game.screen.blit(preview_surf, (screen_x - 20, screen_y - 20))
+
             # Place item on click
             if pygame.mouse.get_pressed()[0] and can_place:
                 new_structure = self.selected_item.item_class(world_x, world_y)
                 self.game.structures.add(new_structure)
-                self.game.all_sprites.add(new_structure)
                 self.inventory.remove(self.selected_item)
                 self.selected_item = None
                 self.placing_item = False
@@ -194,6 +203,11 @@ class ShopManager:
             # G key to cycle through grenades
             elif event.key == pygame.K_g:
                 self.cycle_grenades()
+                return True
+            # ESC key to cancel placement
+            elif event.key == pygame.K_ESCAPE and self.placing_item:
+                self.selected_item = None
+                self.placing_item = False
                 return True
 
         return False

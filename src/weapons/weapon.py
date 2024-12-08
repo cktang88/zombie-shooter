@@ -25,7 +25,7 @@ class Bullet(pygame.sprite.Sprite):
         self.rect.centery = int(self.y)
 
         # Store last few positions for trail
-        self.prev_positions = [(self.x, self.y)]
+        self.prev_positions = []  # Start empty, will fill during first updates
         self.max_trail_length = 5
 
         # Increase bullet speed significantly
@@ -50,6 +50,11 @@ class Bullet(pygame.sprite.Sprite):
         self.collision_rect.center = self.rect.center
 
     def update(self):
+        # Store current position for trail
+        self.prev_positions.append((self.x, self.y))
+        if len(self.prev_positions) > self.max_trail_length:
+            self.prev_positions.pop(0)
+
         # Update position using float coordinates for smooth movement
         self.x += self.dx
         self.y += self.dy
@@ -58,11 +63,6 @@ class Bullet(pygame.sprite.Sprite):
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
         self.update_collision_rect()
-
-        # Update trail
-        self.prev_positions.append((self.x, self.y))
-        if len(self.prev_positions) > self.max_trail_length:
-            self.prev_positions.pop(0)
 
     def draw_bullet(self):
         """Draw the bullet as a line with neon effect."""
@@ -74,33 +74,46 @@ class Bullet(pygame.sprite.Sprite):
         # Center (white hot)
         pygame.draw.line(self.base_image, (255, 255, 255, 255), (0, 2), (20, 2), 1)
 
-    def draw(self, screen, x, y):
+    def draw(self, screen, screen_x, screen_y):
         """Draw bullet with trail effect."""
         # Draw trail
-        for i, (trail_x, trail_y) in enumerate(self.prev_positions[:-1]):
-            # Convert trail positions to screen coordinates
-            screen_x = int(trail_x) - x
-            screen_y = int(trail_y) - y
-            alpha = int(128 * (i / len(self.prev_positions)))  # Fade out trail
+        if len(self.prev_positions) >= 2:
+            for i in range(len(self.prev_positions) - 1):
+                start_pos = self.prev_positions[i]
+                end_pos = self.prev_positions[i + 1]
 
-            # Draw trail segment as a line
-            trail_surf = pygame.Surface((20, 4), pygame.SRCALPHA)
-            pygame.draw.line(trail_surf, (255, 255, 100, alpha), (0, 2), (20, 2), 2)
-            rotated_trail = pygame.transform.rotate(
-                trail_surf, -math.degrees(self.angle)
-            )
-            screen.blit(
-                rotated_trail,
-                (
-                    screen_x - rotated_trail.get_width() // 2,
-                    screen_y - rotated_trail.get_height() // 2,
-                ),
-            )
+                # Convert trail positions to screen coordinates
+                start_screen_x = int(start_pos[0]) - self.rect.x + screen_x
+                start_screen_y = int(start_pos[1]) - self.rect.y + screen_y
+                end_screen_x = int(end_pos[0]) - self.rect.x + screen_x
+                end_screen_y = int(end_pos[1]) - self.rect.y + screen_y
+
+                # Calculate alpha based on position in trail
+                alpha = int(128 * (i / len(self.prev_positions)))
+
+                # Draw trail segment
+                trail_surf = pygame.Surface((20, 4), pygame.SRCALPHA)
+                pygame.draw.line(trail_surf, (255, 255, 100, alpha), (0, 2), (20, 2), 2)
+                rotated_trail = pygame.transform.rotate(
+                    trail_surf, -math.degrees(self.angle)
+                )
+
+                # Position trail segment
+                screen.blit(
+                    rotated_trail,
+                    (
+                        start_screen_x - rotated_trail.get_width() // 2,
+                        start_screen_y - rotated_trail.get_height() // 2,
+                    ),
+                )
 
         # Draw bullet sprite
         screen.blit(
             self.image,
-            (x - self.image.get_width() // 2, y - self.image.get_height() // 2),
+            (
+                screen_x - self.image.get_width() // 2,
+                screen_y - self.image.get_height() // 2,
+            ),
         )
 
 

@@ -380,7 +380,7 @@ class Game:
     def draw_zombie_radar(self):
         """Draw radar indicators for off-screen zombies."""
         # Constants for radar appearance
-        RADAR_MARGIN = 50  # Distance from screen edge
+        RADAR_MARGIN = 30  # Reduced margin for more accurate positioning
         DOT_SIZE = 8
         RADAR_COLOR = (255, 50, 50)  # Bright red
 
@@ -391,41 +391,37 @@ class Game:
         viewport_bottom = self.camera_y + self.screen_height
 
         for zombie in self.zombies:
+            # Get zombie's screen position
+            screen_x = zombie.rect.centerx - self.camera_x
+            screen_y = zombie.rect.centery - self.camera_y
+
             # Check if zombie is outside viewport
             is_outside_viewport = (
-                zombie.rect.right < viewport_left
-                or zombie.rect.left > viewport_right
-                or zombie.rect.bottom < viewport_top
-                or zombie.rect.top > viewport_bottom
+                screen_x < 0
+                or screen_x > self.screen_width
+                or screen_y < 0
+                or screen_y > self.screen_height
             )
 
             if is_outside_viewport:
-                # Get zombie's position relative to screen center
-                screen_center_x = self.screen_width / 2
-                screen_center_y = self.screen_height / 2
+                # Calculate radar dot position
+                radar_x = screen_x
+                radar_y = screen_y
 
-                # Calculate direction to zombie from screen center
-                dx = zombie.rect.centerx - (self.camera_x + screen_center_x)
-                dy = zombie.rect.centery - (self.camera_y + screen_center_y)
-                angle = math.atan2(dy, dx)
+                # Clamp to screen edges with margin
+                if radar_x < 0:
+                    radar_x = RADAR_MARGIN
+                elif radar_x > self.screen_width:
+                    radar_x = self.screen_width - RADAR_MARGIN
 
-                # Calculate radar dot position along screen edge
-                radar_x = screen_center_x + math.cos(angle) * (
-                    self.screen_width / 2 - RADAR_MARGIN
-                )
-                radar_y = screen_center_y + math.sin(angle) * (
-                    self.screen_height / 2 - RADAR_MARGIN
-                )
-
-                # Clamp to screen edges
-                radar_x = max(
-                    RADAR_MARGIN, min(self.screen_width - RADAR_MARGIN, radar_x)
-                )
-                radar_y = max(
-                    RADAR_MARGIN, min(self.screen_height - RADAR_MARGIN, radar_y)
-                )
+                if radar_y < 0:
+                    radar_y = RADAR_MARGIN
+                elif radar_y > self.screen_height:
+                    radar_y = self.screen_height - RADAR_MARGIN
 
                 # Calculate distance for scaling
+                dx = zombie.rect.centerx - (self.camera_x + self.screen_width / 2)
+                dy = zombie.rect.centery - (self.camera_y + self.screen_height / 2)
                 distance = math.sqrt(dx * dx + dy * dy)
                 max_distance = math.sqrt(
                     self.world_width * self.world_width
