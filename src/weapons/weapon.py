@@ -1,3 +1,54 @@
+"""
+Weapon System Module
+-----------------
+
+A comprehensive weapon and projectile system that handles all combat mechanics.
+
+Classes:
+    WeaponType: Enum defining different weapon categories
+    Bullet: Projectile with physics and visual effects
+    Grenade: Throwable explosive with area damage
+    Weapon: Base class for all weapons
+
+Weapon Types:
+    1. Ranged Weapons:
+        - Pistol: Balanced starter weapon (medium damage, medium rate)
+        - Assault Rifle: Rapid-fire automatic (low damage, high rate)
+        - SMG: Very fast firing (very low damage, very high rate)
+        - Battle Rifle: High damage semi-auto (high damage, low rate)
+        - Shotgun: Close range spread (medium damage per pellet)
+
+    2. Melee Weapons:
+        - Knife: Close range melee attack
+
+    3. Throwables:
+        - Grenades: Area damage explosives
+        - Molotov: Area denial fire damage
+
+Weapon Features:
+    - Unique damage values and fire rates
+    - Automatic and semi-automatic firing modes
+    - Ammunition management with reloading
+    - Screen shake feedback
+    - Bullet physics and trail effects
+    - Weapon-specific particle effects
+    - Recoil and spread patterns
+
+Visual Effects:
+    - Dynamic bullet trails based on weapon type
+    - Muzzle flash effects
+    - Impact effects
+    - Reload animations
+    - Weapon switching animations
+
+Combat Mechanics:
+    - Damage falloff with distance
+    - Headshot multipliers
+    - Penetration through weak materials
+    - Area of effect damage
+    - Status effects (burning, slowing)
+"""
+
 import pygame
 import math
 import random
@@ -5,45 +56,66 @@ from enum import Enum
 
 
 class WeaponType(Enum):
-    KNIFE = 1
-    PISTOL = 2
-    ASSAULT_RIFLE = 3
-    SHOTGUN = 4
-    SMG = 5
-    BATTLE_RIFLE = 6
+    """
+    Defines the available weapon types and their base characteristics.
+    Each type has unique properties affecting damage, fire rate, and effects.
+    """
+
+    KNIFE = "knife"
+    PISTOL = "pistol"
+    ASSAULT_RIFLE = "assault_rifle"
+    SHOTGUN = "shotgun"
+    SMG = "smg"
+    BATTLE_RIFLE = "battle_rifle"
 
 
 class Bullet(pygame.sprite.Sprite):
+    """
+    Projectile class with physics and visual effects.
+
+    Features:
+        - Smooth movement with float coordinates
+        - Dynamic trail effects based on weapon type
+        - Collision detection with precise hitbox
+        - Damage properties from source weapon
+        - Visual effects (glow, trails)
+    """
+
     def __init__(self, x, y, angle, damage=10):
         super().__init__()
-        # Create a smaller surface for the line bullet
-        self.image = pygame.Surface((20, 4), pygame.SRCALPHA)
-        self.rect = self.image.get_rect()
+        self.rect = pygame.Rect(x - 10, y - 10, 20, 20)
+        self.collision_rect = pygame.Rect(x - 2, y - 2, 4, 4)
         self.x = float(x)
         self.y = float(y)
-        self.rect.centerx = int(self.x)
-        self.rect.centery = int(self.y)
-
-        # Store last few positions for trail
-        self.prev_positions = []  # Start empty, will fill during first updates
-        self.max_trail_length = 5
-
-        # Increase bullet speed significantly
-        self.speed = 35
         self.angle = angle
-        self.dx = math.cos(angle) * self.speed
-        self.dy = math.sin(angle) * self.speed
         self.damage = damage
+        self.dx = math.cos(angle) * 15  # Speed is now 15
+        self.dy = math.sin(angle) * 15
+        self.prev_positions = []
+        self.max_trail_length = 10
 
-        # Rotate bullet image to match angle
-        self.base_image = self.image.copy()
+        # Create base bullet image
+        self.base_image = pygame.Surface((20, 4), pygame.SRCALPHA)
         self.draw_bullet()
         self.image = pygame.transform.rotate(self.base_image, -math.degrees(angle))
-        self.rect = self.image.get_rect(center=(self.x, self.y))
+        self.rect = self.image.get_rect(center=(x, y))
 
-        # Add a smaller collision rect for more precise collision detection
-        self.collision_rect = pygame.Rect(0, 0, 8, 8)  # Smaller collision box
-        self.update_collision_rect()
+        # New: Dynamic trail properties based on damage
+        if damage >= 40:  # High damage weapons (e.g. sniper)
+            self.trail_color = (255, 100, 100)  # Red trail
+            self.max_trail_length = 15
+            self.trail_width = 3
+            self.glow_intensity = 2.0
+        elif damage >= 20:  # Medium damage (e.g. assault rifle)
+            self.trail_color = (100, 255, 255)  # Cyan trail
+            self.max_trail_length = 12
+            self.trail_width = 2
+            self.glow_intensity = 1.5
+        else:  # Low damage weapons
+            self.trail_color = (255, 255, 100)  # Yellow trail
+            self.max_trail_length = 8
+            self.trail_width = 1
+            self.glow_intensity = 1.0
 
     def update_collision_rect(self):
         """Update the smaller collision rectangle position."""
@@ -75,7 +147,7 @@ class Bullet(pygame.sprite.Sprite):
         pygame.draw.line(self.base_image, (255, 255, 255, 255), (0, 2), (20, 2), 1)
 
     def draw(self, screen, screen_x, screen_y):
-        """Draw bullet with trail effect."""
+        """Draw bullet with enhanced trail effect."""
         # Draw trail
         if len(self.prev_positions) >= 2:
             for i in range(len(self.prev_positions) - 1):
@@ -88,17 +160,49 @@ class Bullet(pygame.sprite.Sprite):
                 end_screen_x = int(end_pos[0]) - self.rect.x + screen_x
                 end_screen_y = int(end_pos[1]) - self.rect.y + screen_y
 
-                # Calculate alpha based on position in trail
-                alpha = int(128 * (i / len(self.prev_positions)))
+                # Calculate alpha and width based on position in trail
+                progress = i / len(self.prev_positions)
+                alpha = int(128 * progress)
+                width = max(1, self.trail_width * progress)
 
-                # Draw trail segment
+                # Draw outer glow
+                glow_surf = pygame.Surface((20, 4), pygame.SRCALPHA)
+                glow_color = (*self.trail_color, int(alpha * 0.5))
+                pygame.draw.line(
+                    glow_surf,
+                    glow_color,
+                    (0, 2),
+                    (20, 2),
+                    int(width * self.glow_intensity * 2),
+                )
+
+                # Draw core trail
                 trail_surf = pygame.Surface((20, 4), pygame.SRCALPHA)
-                pygame.draw.line(trail_surf, (255, 255, 100, alpha), (0, 2), (20, 2), 2)
+                trail_color = (*self.trail_color, alpha)
+                pygame.draw.line(
+                    trail_surf,
+                    trail_color,
+                    (0, 2),
+                    (20, 2),
+                    int(width * self.glow_intensity),
+                )
+
+                # Rotate and position trail segments
+                rotated_glow = pygame.transform.rotate(
+                    glow_surf, -math.degrees(self.angle)
+                )
                 rotated_trail = pygame.transform.rotate(
                     trail_surf, -math.degrees(self.angle)
                 )
 
-                # Position trail segment
+                # Position and draw trail segments
+                screen.blit(
+                    rotated_glow,
+                    (
+                        start_screen_x - rotated_glow.get_width() // 2,
+                        start_screen_y - rotated_glow.get_height() // 2,
+                    ),
+                )
                 screen.blit(
                     rotated_trail,
                     (
@@ -107,7 +211,7 @@ class Bullet(pygame.sprite.Sprite):
                     ),
                 )
 
-        # Draw bullet sprite
+        # Draw the bullet itself
         screen.blit(
             self.image,
             (

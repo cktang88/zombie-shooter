@@ -1,9 +1,84 @@
+"""
+Player Entity Module
+-----------------
+
+The main player character with movement, combat, and inventory systems.
+
+Features:
+    1. Movement System:
+        - Smooth WASD/Arrow key movement
+        - Diagonal movement normalization
+        - World boundary collision
+        - Movement state tracking for effects
+        - Camera following with smoothing
+
+    2. Combat System:
+        - Mouse aim and shooting
+        - Multiple weapon types
+        - Weapon switching
+        - Ammo management
+        - Grenade throwing
+        - Melee combat
+        - Health system with damage handling
+
+    3. Inventory System:
+        - Multiple weapon slots
+        - Grenade inventory
+        - Weapon cycling
+        - Ammunition tracking
+        - Reload management
+
+    4. Visual Effects:
+        - Health bar with gradient
+        - Ammo counter
+        - Reload progress bar
+        - Weapon display
+        - Movement particles
+        - Combat effects
+        - Damage feedback
+
+    5. Interaction System:
+        - Structure placement
+        - Item pickup
+        - Shop interaction
+        - Resource management
+
+States:
+    - Moving/Stationary
+    - Firing/Not Firing
+    - Reloading
+    - Taking Damage
+    - Dead/Alive
+"""
+
 import pygame
 import math
 from ..weapons.weapon import Weapon, WeaponType, Grenade
 
 
 class Player(pygame.sprite.Sprite):
+    """
+    Player character class handling movement, combat, and visual representation.
+
+    Attributes:
+        Movement:
+            - position (x, y): Float coordinates for smooth movement
+            - speed: Movement velocity
+            - is_moving: Current movement state
+
+        Combat:
+            - health: Current health points
+            - max_health: Maximum health capacity
+            - weapons: List of available weapons
+            - current_weapon: Active weapon reference
+            - is_firing: Current firing state
+
+        Inventory:
+            - grenades: Number of available grenades
+            - weapon_slots: Available weapon positions
+            - current_weapon_index: Active weapon slot
+    """
+
     def __init__(self, x, y, game=None):
         super().__init__()
         self.rect = pygame.Rect(x, y, 40, 40)
@@ -11,6 +86,11 @@ class Player(pygame.sprite.Sprite):
         self.health = 100
         self.angle = 0
         self.game = game
+
+        # Movement state
+        self.is_moving = False
+        self.x = float(x)
+        self.y = float(y)
 
         # Weapons
         self.weapons = [
@@ -48,15 +128,13 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             dy += self.speed
 
+        # Update movement state
+        self.is_moving = dx != 0 or dy != 0
+
         # Apply diagonal movement normalization
         if dx != 0 and dy != 0:
             dx *= 0.7071  # 1/√2
             dy *= 0.7071
-
-        # Store float positions for smooth movement
-        if not hasattr(self, "x"):
-            self.x = float(self.rect.x)
-            self.y = float(self.rect.y)
 
         # Update position with world bounds checking
         new_x = self.x + dx

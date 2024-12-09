@@ -1,3 +1,71 @@
+"""
+Main Game Module
+-------------
+
+Core game engine handling game state, entities, and game loop.
+
+Game Systems:
+    1. Core Systems:
+        - Game loop with fixed time step
+        - State management (Playing, Shopping, Paused)
+        - Input handling
+        - Camera system with smoothing
+        - Screen shake effects
+        - Particle system integration
+
+    2. Entity Management:
+        - Player character
+        - Multiple zombie types
+        - Projectiles (bullets, grenades)
+        - Defensive structures
+        - Particle effects
+
+    3. Combat System:
+        - Weapon mechanics
+        - Collision detection
+        - Damage calculation
+        - Area effects
+        - Visual feedback
+
+    4. Wave System:
+        - Progressive difficulty
+        - Boss waves
+        - Resource rewards
+        - Wave completion logic
+
+    5. Shop System:
+        - Between-wave shopping
+        - Weapon upgrades
+        - Structure placement
+        - Resource management
+
+    6. Visual Systems:
+        - Particle effects
+        - Screen shake
+        - UI elements
+        - Health/ammo displays
+        - Damage indicators
+
+    7. Resource Systems:
+        - Cash economy
+        - Ammo management
+        - Health system
+        - Structure resources
+
+Game States:
+    - PLAYING: Active combat phase
+    - SHOPPING: Between-wave upgrade phase
+    - PAUSED: Game suspended
+    - GAME_OVER: End state with stats
+
+Performance Features:
+    - Entity pooling
+    - Particle optimization
+    - View frustum culling
+    - Batch rendering
+    - State caching
+"""
+
 import pygame
 from .entities.player import Player
 from .entities.castle import Castle
@@ -6,57 +74,44 @@ from .managers.shop_manager import ShopManager
 from .utils.game_state import GameState
 import math
 import random
+from .effects.particles import ParticleSystem
 
 
 class Game:
     """
-    Game Manager - Core Game Logic
-    -----------------------------
+    Main game class managing all game systems and state.
 
-    This class manages the main game loop and state transitions. It handles:
-
-    1. Game States:
-       - PLAYING: Active gameplay with zombies and shooting
-       - SHOPPING: Between waves, player can buy upgrades
-       - PAUSED: Game paused, can resume or quit
-
-    2. Core Systems:
-       - Camera management with smooth following and screen shake
-       - Sprite group management (bullets, zombies, structures)
-       - Wave management and progression
-       - Shop system between waves
-       - Player and castle (base) management
-
-    3. Rendering:
-       - Layered rendering (background -> structures -> zombies -> player -> bullets -> UI)
-       - UI elements (health, ammo, wave info, cash)
-       - Screen shake effects
-       - Shop interface
-
-    4. Coordinate Systems:
-       - Screen coordinates: Relative to viewport
-       - World coordinates: Absolute positions in game world
-       - Conversion methods between the two
-
-    5. Game Flow:
-       - Wave starts -> Players fights zombies
-       - Wave complete -> Shop opens
-       - Player buys upgrades -> Next wave starts
+    Core Systems:
+        - Game loop and state management
+        - Entity spawning and updates
+        - Collision detection
+        - Resource management
+        - Visual effects
+        - Input handling
+        - Camera system
     """
 
     def __init__(self, screen_width, screen_height):
+        # Initialize Pygame
+        pygame.init()
+        self.screen = pygame.display.set_mode((screen_width, screen_height))
+        pygame.display.set_caption("Zombie Shooter")
+
+        # Screen dimensions
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.screen = pygame.display.set_mode((screen_width, screen_height))
+
+        # Initialize particle system
+        self.particle_system = ParticleSystem()
+
+        # World dimensions (larger than screen)
+        self.world_width = screen_width * 3
+        self.world_height = screen_height * 3
 
         # Game state
         self.state = GameState.SHOPPING
         self.is_paused = False
         self.cash = 500
-
-        # World dimensions
-        self.world_width = screen_width * 2
-        self.world_height = screen_height * 2
 
         # Camera position
         self.camera_x = 0
@@ -130,6 +185,15 @@ class Game:
         self.shop_manager.update()
 
         if not self.is_paused and self.state == GameState.PLAYING:
+            # Create ambient particles in the visible area
+            visible_area = (
+                self.camera_x - 100,  # Add some padding
+                self.camera_y - 100,
+                self.screen_width + 200,
+                self.screen_height + 200,
+            )
+            self.particle_system.create_ambient_particles(*visible_area)
+
             # Update player with world coordinates
             self.player.update(self.mouse_world_x, self.mouse_world_y)
 
@@ -137,9 +201,24 @@ class Game:
             for bullet in list(self.bullets):
                 bullet.update()
 
+                # Create bullet trail particles
+                self.particle_system.create_bullet_trail(
+                    bullet.x,
+                    bullet.y,
+                    (bullet.dx, bullet.dy),
+                    color=(100, 200, 255),  # Cyan color for bullet trails
+                )
+
                 # Check for zombie collisions using the smaller collision rect
                 for zombie in list(self.zombies):
                     if bullet.collision_rect.colliderect(zombie.rect):
+                        # Create blood effect on hit
+                        self.particle_system.create_blood_effect(
+                            zombie.rect.centerx,
+                            zombie.rect.centery,
+                            direction=(bullet.dx, bullet.dy),
+                            amount=15,
+                        )
                         zombie.take_damage(bullet.damage)
                         bullet.kill()
                         break
@@ -153,32 +232,71 @@ class Game:
                 ):
                     bullet.kill()
 
-            self.zombies.update(self.player.rect.centerx, self.player.rect.centery)
-            self.structures.update()
+            # Update zombies
+            for zombie in list(self.zombies):
+                zombie.update(self.player.rect.centerx, self.player.rect.centery)
 
-            # Update grenades and handle explosions
+                # Create footstep particles for zombies
+                if random.random() < 0.1:  # 10% chance per frame
+                    self.particle_system.create_footstep(
+                        zombie.rect.centerx,
+                        zombie.rect.bottom,
+                        color=(100, 80, 80),  # Dark red for zombie footsteps
+                    )
+
+                # Check for collisions with player
+                if zombie.rect.colliderect(self.player.rect):
+                    self.player.take_damage(zombie.damage)
+                    # Create blood effect when player is hit
+                    self.particle_system.create_blood_effect(
+                        self.player.rect.centerx,
+                        self.player.rect.centery,
+                        direction=(
+                            zombie.rect.centerx - self.player.rect.centerx,
+                            zombie.rect.centery - self.player.rect.centery,
+                        ),
+                        amount=20,
+                    )
+
+            # Create player footstep particles when moving
+            if (
+                self.player.is_moving and random.random() < 0.2
+            ):  # 20% chance per frame when moving
+                self.particle_system.create_footstep(
+                    self.player.rect.centerx,
+                    self.player.rect.bottom,
+                    color=(150, 150, 150),  # Gray for player footsteps
+                )
+
+            # Update grenades
             for grenade in list(self.grenades):
-                grenade.update()
+                grenade.update(pygame.time.get_ticks())
                 if grenade.exploded:
+                    # Create explosion particles
+                    self.particle_system.create_explosion(
+                        grenade.rect.centerx,
+                        grenade.rect.centery,
+                        num_particles=50,
+                        speed_range=(3, 10),
+                        lifetime_range=(30, 60),
+                        size_range=(2, 5),
+                    )
+
                     # Check for zombies in explosion radius
-                    for zombie in self.zombies:
-                        dx = zombie.rect.centerx - grenade.rect.centerx
-                        dy = zombie.rect.centery - grenade.rect.centery
-                        distance = math.sqrt(dx * dx + dy * dy)
-
+                    for zombie in list(self.zombies):
+                        distance = math.sqrt(
+                            (zombie.rect.centerx - grenade.rect.centerx) ** 2
+                            + (zombie.rect.centery - grenade.rect.centery) ** 2
+                        )
                         if distance <= grenade.explosion_radius:
-                            # Calculate damage falloff based on distance
-                            damage_multiplier = 1 - (
-                                distance / grenade.explosion_radius
+                            damage = int(
+                                grenade.damage
+                                * (1 - distance / grenade.explosion_radius)
                             )
-                            damage = grenade.explosion_damage * damage_multiplier
-                            zombie.take_damage(int(damage))
+                            zombie.take_damage(damage)
 
-                    # Add explosion effect (screen shake)
-                    self.add_screen_shake(2.0)  # Stronger shake for explosions
-
-                    # Remove the exploded grenade
-                    grenade.kill()
+            # Update particle system
+            self.particle_system.update()
 
             # Update wave manager
             self.wave_manager.update(self)
@@ -284,13 +402,15 @@ class Game:
             self.player.rect.y - self.camera_y,
         )
 
-        # Draw bullets on top
+        # Draw bullets
         for bullet in self.bullets:
-            screen_x = bullet.rect.x - self.camera_x
-            screen_y = bullet.rect.y - self.camera_y
-            bullet.draw(self.screen, screen_x, screen_y)
+            bullet.draw(
+                self.screen,
+                bullet.rect.x - self.camera_x,
+                bullet.rect.y - self.camera_y,
+            )
 
-        # Draw grenades and their explosion radius preview last
+        # Draw grenades
         for grenade in self.grenades:
             grenade.draw(
                 self.screen,
@@ -298,18 +418,8 @@ class Game:
                 grenade.rect.y - self.camera_y,
             )
 
-            # Draw explosion radius preview if grenade hasn't exploded
-            if not grenade.exploded:
-                pygame.draw.circle(
-                    self.screen,
-                    (255, 200, 0, 128),  # Semi-transparent yellow
-                    (
-                        int(grenade.rect.centerx - self.camera_x),
-                        int(grenade.rect.centery - self.camera_y),
-                    ),
-                    int(grenade.explosion_radius),
-                    1,  # Draw only outline
-                )
+        # Draw particles with camera offset
+        self.particle_system.draw(self.screen, (self.camera_x, self.camera_y))
 
     def draw_ui(self):
         """Draw all UI elements."""
