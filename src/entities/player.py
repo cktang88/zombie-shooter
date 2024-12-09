@@ -98,8 +98,13 @@ class Player(pygame.sprite.Sprite):
             Weapon(WeaponType.KNIFE),
             Weapon(WeaponType.ASSAULT_RIFLE),
             Weapon(WeaponType.SMG),
+            Weapon(WeaponType.SHOTGUN),
             Weapon(WeaponType.BATTLE_RIFLE),
         ]
+        # Set game reference for all weapons
+        for weapon in self.weapons:
+            weapon.set_game(game)
+
         self.current_weapon_index = 0
         self.current_weapon = self.weapons[self.current_weapon_index]
 
@@ -175,28 +180,31 @@ class Player(pygame.sprite.Sprite):
                             self.current_weapon.has_fired_once = True
 
     def handle_event(self, event):
+        """Handle player input events."""
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
-                print("Mouse button down")  # Debug
-                self.is_firing = True
-                if self.current_weapon:
-                    self.current_weapon.has_fired_once = False
-                # Initial shot
-                bullets = self.shoot()
-                if bullets and self.game:
-                    print(f"Created initial {len(bullets)} bullets")  # Debug
-                    self.game.bullets.add(bullets)
+                if self.current_weapon.is_reloading:
+                    # Continue reload if in progress
+                    self.current_weapon.continue_reload()
+                else:
+                    # Start shooting
+                    self.is_firing = True
+                    bullets = self.shoot()
+                    if bullets and self.game:
+                        self.game.bullets.add(bullets)
+                    return True
             elif event.button == 3:  # Right click
-                self.throw_grenade()
+                if self.grenades > 0:
+                    self.throw_grenade()
+                    return True
         elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                print("Mouse button up")  # Debug
+            if event.button == 1:  # Left click released
                 self.is_firing = False
                 if self.current_weapon:
                     self.current_weapon.has_fired_once = False
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_r:
-                if self.current_weapon:
+            if event.key == pygame.K_r:  # Reload
+                if self.current_weapon and not self.current_weapon.is_reloading:
                     self.current_weapon.start_reload()
             elif event.key == pygame.K_q:
                 self.cycle_weapon()

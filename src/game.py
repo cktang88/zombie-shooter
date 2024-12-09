@@ -206,18 +206,23 @@ class Game:
                     bullet.x,
                     bullet.y,
                     (bullet.dx, bullet.dy),
-                    color=(100, 200, 255),  # Cyan color for bullet trails
+                    color=bullet.bullet_color,  # Use bullet's own color
                 )
 
                 # Check for zombie collisions using the smaller collision rect
                 for zombie in list(self.zombies):
                     if bullet.collision_rect.colliderect(zombie.rect):
-                        # Create blood effect on hit
+                        # Calculate exact impact point
+                        impact_x = bullet.x
+                        impact_y = bullet.y
+
+                        # Create blood effect at impact point
                         self.particle_system.create_blood_effect(
                             zombie.rect.centerx,
                             zombie.rect.centery,
                             direction=(bullet.dx, bullet.dy),
                             amount=15,
+                            impact_point=(impact_x, impact_y),
                         )
                         zombie.take_damage(bullet.damage)
                         bullet.kill()

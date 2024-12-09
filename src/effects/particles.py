@@ -121,10 +121,8 @@ class Particle:
 
         return self.lifetime > 0
 
-    def draw(
-        self, screen: pygame.Surface, camera_offset: Tuple[int, int] = (0, 0)
-    ) -> None:
-        offset_x, offset_y = camera_offset
+    def draw(self, screen, offset_x=0, offset_y=0):
+        """Draw the particle with optional trail."""
         screen_x = int(self.x - offset_x)
         screen_y = int(self.y - offset_y)
 
@@ -152,13 +150,19 @@ class Particle:
                     )
                 screen.blit(
                     trail_surf,
-                    (trail_x - offset_x - trail_size, trail_y - offset_y - trail_size),
+                    (
+                        int(trail_x - offset_x - trail_size),
+                        int(trail_y - offset_y - trail_size),
+                    ),
                 )
 
         # Draw particle
         particle_surf = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
         pygame.draw.circle(
-            particle_surf, (*self.color, self.alpha), (self.size, self.size), self.size
+            particle_surf,
+            (*self.color, self.alpha),
+            (self.size, self.size),
+            self.size,
         )
         if self.glow:
             pygame.draw.circle(
@@ -232,18 +236,58 @@ class ParticleSystem:
 
     def __init__(self):
         self.particles: List[Particle] = []
+        self.permanent_decals = []  # For blood stains that stay on ground
+        self.max_decals = 100  # Limit permanent decals for performance
 
     def add_particle(self, particle: Particle) -> None:
         self.particles.append(particle)
 
+    def add_decal(
+        self,
+        x: float,
+        y: float,
+        color: Tuple[int, int, int],
+        size: float,
+        alpha: int = 128,
+    ) -> None:
+        """Add a permanent decal (like blood stains) to the ground."""
+        if len(self.permanent_decals) >= self.max_decals:
+            self.permanent_decals.pop(0)  # Remove oldest decal
+
+        self.permanent_decals.append(
+            {"x": x, "y": y, "color": color, "size": size, "alpha": alpha}
+        )
+
     def update(self) -> None:
         self.particles = [p for p in self.particles if p.update()]
 
-    def draw(
-        self, screen: pygame.Surface, camera_offset: Tuple[int, int] = (0, 0)
-    ) -> None:
+    def draw(self, screen, camera_offset=(0, 0)):
+        """Draw all particles with camera offset."""
+        # Unpack camera offset
+        offset_x, offset_y = camera_offset
+
+        # Draw permanent decals first (they should be under everything else)
+        for decal in self.permanent_decals:
+            screen_x = int(decal["x"] - offset_x)
+            screen_y = int(decal["y"] - offset_y)
+
+            # Create surface for the decal with alpha
+            decal_surf = pygame.Surface(
+                (decal["size"] * 2, decal["size"] * 2), pygame.SRCALPHA
+            )
+            pygame.draw.circle(
+                decal_surf,
+                (*decal["color"], decal["alpha"]),
+                (decal["size"], decal["size"]),
+                decal["size"],
+            )
+            screen.blit(
+                decal_surf, (screen_x - decal["size"], screen_y - decal["size"])
+            )
+
+        # Draw active particles
         for particle in self.particles:
-            particle.draw(screen, camera_offset)
+            particle.draw(screen, offset_x, offset_y)
 
     def create_explosion(
         self,
@@ -337,36 +381,44 @@ class ParticleSystem:
                 )
             )
 
-    def create_bullet_trail(
-        self,
-        x: float,
-        y: float,
-        velocity: Tuple[float, float],
-        color: Tuple[int, int, int] = (0, 255, 255),
-    ) -> None:
-        speed = math.sqrt(velocity[0] ** 2 + velocity[1] ** 2)
-        angle = math.atan2(velocity[1], velocity[0])
+    def create_bullet_trail(self, x, y, angle, color):
+        """Create a trail effect behind a bullet."""
+        # Ensure angle is a float
+        if isinstance(angle, tuple):
+            dx, dy = angle
+            angle = math.atan2(dy, dx)
+        else:
+            angle = float(angle)
 
-        for _ in range(3):
-            spread = random.uniform(-0.2, 0.2)
-            new_angle = angle + spread
-            new_velocity = (
-                math.cos(new_angle) * speed * 0.3,
-                math.sin(new_angle) * speed * 0.3,
-            )
+        # Create overlapping trails for continuous effect
+        num_segments = 3  # Number of overlapping segments
+        base_length = 8  # Base length of each segment
+        line_width = 2  # Fixed width
+        lifetime = 0.2  # Longer lifetime for smoother fade
 
-            self.add_particle(
-                Particle(
-                    x,
-                    y,
-                    color,
-                    new_velocity,
-                    lifetime=10,
-                    size=2,
-                    glow=True,
-                    trail_length=3,
-                )
+        for i in range(num_segments):
+            # Calculate segment position with overlap
+            segment_length = base_length * (1 + i * 0.8)
+            # Start exactly at bullet position
+            start_x = x
+            start_y = y
+            # End behind bullet with overlap
+            end_x = x - math.cos(angle) * segment_length
+            end_y = y - math.sin(angle) * segment_length
+
+            # Create line particle with decreasing initial alpha for each segment
+            initial_alpha = 0.8 - (i * 0.15)  # Start more transparent
+            particle = LineParticle(
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                line_width,
+                color,
+                lifetime,
+                initial_alpha,
             )
+            self.add_particle(particle)
 
     def create_blood_effect(
         self,
@@ -374,8 +426,9 @@ class ParticleSystem:
         y: float,
         direction: Tuple[float, float] = (0, 0),
         amount: int = 10,
+        impact_point: Tuple[float, float] = None,  # Add impact point parameter
     ) -> None:
-        """Create a blood splatter effect."""
+        """Create a blood splatter effect with permanent decals."""
         # Blood colors for variation
         blood_colors = [
             (150, 0, 0),  # Dark red
@@ -384,21 +437,23 @@ class ParticleSystem:
             (120, 0, 0),  # Very dark red
         ]
 
+        # Use impact point if provided, otherwise use center
+        spawn_x = impact_point[0] if impact_point else x
+        spawn_y = impact_point[1] if impact_point else y
+
         # Calculate base angle from direction
         base_angle = math.atan2(direction[1], direction[0])
 
         # Create main blood particles
         for _ in range(amount):
-            # Vary the angle within a cone in the direction of impact
             angle = base_angle + random.uniform(-math.pi / 3, math.pi / 3)
-            speed = random.uniform(2, 6)  # Faster particles for more impact
+            speed = random.uniform(2, 6)
             velocity = (math.cos(angle) * speed, math.sin(angle) * speed)
 
-            # Create blood particle with random properties
             self.add_particle(
                 Particle(
-                    x,
-                    y,
+                    spawn_x,
+                    spawn_y,
                     random.choice(blood_colors),
                     velocity,
                     lifetime=random.randint(20, 40),
@@ -409,18 +464,16 @@ class ParticleSystem:
                 )
             )
 
-        # Create blood spray particles (smaller, faster particles)
+        # Create blood spray particles
         for _ in range(amount // 2):
-            angle = base_angle + random.uniform(
-                -math.pi / 6, math.pi / 6
-            )  # Narrower cone
-            speed = random.uniform(7, 12)  # Much faster for spray effect
+            angle = base_angle + random.uniform(-math.pi / 6, math.pi / 6)
+            speed = random.uniform(7, 12)
             velocity = (math.cos(angle) * speed, math.sin(angle) * speed)
 
             self.add_particle(
                 Particle(
-                    x,
-                    y,
+                    spawn_x,
+                    spawn_y,
                     random.choice(blood_colors),
                     velocity,
                     lifetime=random.randint(10, 20),
@@ -431,25 +484,15 @@ class ParticleSystem:
                 )
             )
 
-        # Create blood pool effect (particles that stay on the ground)
+        # Create permanent blood decals on the ground
         for _ in range(amount // 2):
-            angle = random.uniform(0, math.pi * 2)  # Spread in all directions
-            speed = random.uniform(0.5, 2)  # Slower for pool effect
-            velocity = (math.cos(angle) * speed, math.sin(angle) * speed)
+            decal_x = spawn_x + random.uniform(-10, 10)
+            decal_y = spawn_y + random.uniform(-10, 10)
+            decal_size = random.uniform(3, 8)
+            decal_color = random.choice(blood_colors)
+            decal_alpha = random.randint(100, 180)
 
-            self.add_particle(
-                Particle(
-                    x,
-                    y,
-                    random.choice(blood_colors),
-                    velocity,
-                    lifetime=random.randint(40, 80),  # Longer lifetime
-                    size=random.uniform(3, 5),  # Larger particles
-                    gravity=0.4,  # Strong gravity to keep them on ground
-                    fade=True,
-                    trail_length=0,  # No trail for pool particles
-                )
-            )
+            self.add_decal(decal_x, decal_y, decal_color, decal_size, decal_alpha)
 
     def create_muzzle_flash(
         self,
@@ -535,3 +578,57 @@ class ParticleSystem:
             )
             particle.is_ambient = True  # Mark as ambient for counting
             self.add_particle(particle)
+
+    def add_walking_particle(self, x, y, direction):
+        """Add a particle effect for walking."""
+        angle = direction + random.uniform(-0.5, 0.5)  # Spread particles
+        speed = random.uniform(1, 3)
+        size = random.uniform(4, 8)  # Increased from (2, 4)
+        lifetime = random.uniform(0.3, 0.6)
+        color = (150, 150, 150)  # Dust color
+
+        self.add_particle(
+            x, y, angle, speed, size, lifetime, color, alpha_fade=True, gravity=0.1
+        )
+
+
+class LineParticle(Particle):
+    """A particle that renders as a line instead of a circle."""
+
+    def __init__(
+        self, start_x, start_y, end_x, end_y, width, color, lifetime, initial_alpha=1.0
+    ):
+        velocity = (0.0, 0.0)
+        super().__init__(
+            x=start_x,
+            y=start_y,
+            color=color,
+            velocity=velocity,
+            lifetime=int(lifetime * 60),
+            size=width,
+            fade=True,
+            glow=False,
+        )
+        self.end_x = end_x
+        self.end_y = end_y
+        self.width = width
+        self.initial_alpha = initial_alpha
+
+    def draw(self, screen, offset_x=0, offset_y=0):
+        """Draw the line particle."""
+        # Smooth fade out with initial transparency
+        progress = self.lifetime / self.max_lifetime
+        # Quadratic fade for smoother transition
+        fade = progress * progress
+        # Start partially transparent and fade to zero
+        alpha = int(min(255, 120 * fade * self.initial_alpha))
+
+        if alpha <= 0:
+            return
+
+        # Draw the line from start to end point
+        start_pos = (int(self.x - offset_x), int(self.y - offset_y))
+        end_pos = (int(self.end_x - offset_x), int(self.end_y - offset_y))
+
+        # Draw the line with fixed width
+        pygame.draw.line(screen, (*self.color, alpha), start_pos, end_pos, self.width)
